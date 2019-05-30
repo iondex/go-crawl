@@ -25,4 +25,6 @@ func (u *UrlSet) Sync() {
 			Password: "123456",
 		})
 	}
+
+	u.client.SAdd(u.key, "123").Result()
 }

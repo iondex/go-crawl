@@ -1,4 +1,4 @@
-package main
+package requester
 
 import (
 	"errors"
@@ -55,7 +55,6 @@ func (r *Requester) request(url string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Golang_Spider_Bot/3.0")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -87,8 +86,9 @@ func (r *Requester) Start() {
 				if err != nil {
 					log.Printf("[Worker %d] Error: %s\n", i, err)
 					time.Sleep(50 * time.Millisecond)
+				} else {
+					log.Printf("[Worker %d] Done: %s\n", i, url)
 				}
-				log.Printf("[Worker %d] Done: %s\n", i, url)
 			}
 		}(n, r.jobs)
 	}
