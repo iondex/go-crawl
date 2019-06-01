@@ -1,37 +1,40 @@
 package page
 
 import (
-	"log"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/iondex/go-crawl/config"
+	"github.com/iondex/scraper-go/config"
+	"github.com/iondex/scraper-go/requester"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
 	maxChannelLen = config.MaxChannelLen
+	logger        = log.WithField("module", "page_parser")
 )
 
-type PageParser struct {
-	input      chan string
+// Parser page parser struct
+type Parser struct {
+	input      chan *requester.Page
 	links      chan string
-	linkFilter func(link string) bool
+	LinkFilter func(link string) bool
 }
 
-func NewPageParser() *PageParser {
-	r := &PageParser{
+func NewParser() *Parser {
+	p := &Parser{
 		links: make(chan string, maxChannelLen),
-		input: make(chan string, maxChannelLen),
-		linkFilter: func(url string) bool {
+		input: make(chan *requester.Page, maxChannelLen),
+		LinkFilter: func(url string) bool {
 			return strings.HasPrefix(url, "http")
 		},
 	}
-	r.Start()
-	return r
+	p.Start()
+	return p
 }
 
-// In starts a goroutine to read from chan in.
-func (p *PageParser) In(in chan string) {
+// PagesIn starts a goroutine to read pages from chan in.
+func (p *Parser) PagesIn(in chan *requester.Page) {
 	go func() {
 		for b := range in {
 			p.input <- b
@@ -39,43 +42,45 @@ func (p *PageParser) In(in chan string) {
 	}()
 }
 
-// Out starts a goroutine to output all parsed links.
-func (p *PageParser) Out() chan string {
-	o := make(chan string, maxChannelLen)
+// LinksOut starts a goroutine to output all parsed links.
+func (p *Parser) LinksOut() chan string {
+	out := make(chan string, maxChannelLen)
 	go func() {
 		for l := range p.links {
-			o <- l
+			out <- l
 		}
 	}()
-	return o
+	return out
 }
 
-func (p *PageParser) extractLinks(doc *goquery.Document) {
+func (p *Parser) extractLinks(doc *goquery.Document) int {
 	sel := doc.Find("a")
 	sel.Each(func(i int, s *goquery.Selection) {
 		v, e := s.Attr("href")
-		if e && p.linkFilter(v) {
+		if e && p.LinkFilter(v) {
 			p.links <- v
 		}
 	})
+	return len(sel.Nodes)
 }
 
-func (p *PageParser) parse(body string) error {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+func (p *Parser) parse(page *requester.Page) error {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(page.Content))
 	if err != nil {
 		return err
 	}
-	go p.extractLinks(doc)
+	n := p.extractLinks(doc)
+	logger.Infof("Extracted %d links from %s", n, page.Url)
 	return nil
 }
 
 // Start starts PageParser goroutine
-func (p *PageParser) Start() {
+func (p *Parser) Start() {
 	go func() {
-		for body := range p.input {
-			err := p.parse(body)
+		for page := range p.input {
+			err := p.parse(page)
 			if err != nil {
-				log.Println("[Parser] Failed:", err)
+				log.Printf("[Parser] Failed for [%s] - %s\n", page.Url, err.Error())
 			}
 		}
 	}()

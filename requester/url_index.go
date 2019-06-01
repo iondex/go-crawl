@@ -1,16 +1,13 @@
 package requester
 
 import (
-	"log"
-
-	mapset "github.com/deckarep/golang-set"
 	"github.com/go-redis/redis"
-	"github.com/iondex/go-crawl/config"
+	"github.com/iondex/scraper-go/config"
+	log "github.com/sirupsen/logrus"
 )
 
 // UrlIndex object is used to prevent accessing previously accessed url.
 type UrlIndex struct {
-	data     mapset.Set
 	redisKey string
 	client   *redis.Client
 }
@@ -18,7 +15,6 @@ type UrlIndex struct {
 // NewUrlIndex make a new url index and connect to redis server
 func NewUrlIndex(key string) *UrlIndex {
 	return &UrlIndex{
-		data:     mapset.NewSet(),
 		redisKey: key,
 		client: redis.NewClient(&redis.Options{
 			Addr:     config.RedisAddr,
@@ -29,12 +25,17 @@ func NewUrlIndex(key string) *UrlIndex {
 
 // Add adds a new url in UrlIndex. Errors won't be returned, but will be logged.
 func (u *UrlIndex) Add(url string) {
+	logger := log.WithFields(log.Fields{
+		"module": "url_index",
+	})
 	n, err := u.client.SAdd(u.redisKey, url).Result()
 	if err != nil {
-		log.Printf("WARNING: Add action failed - %s\n", err.Error())
+		logger.Errorf("Add action failed: %s", err.Error())
 	}
-	if n != 1 {
-		log.Printf("WARNING: Add action seems failed (n=%d)\n", n)
+	if n == 0 {
+		logger.Warnf("URL already exists: %s", url)
+	} else {
+		logger.Infof("URL added: %s", url)
 	}
 }
 
@@ -49,12 +50,16 @@ func (u *UrlIndex) Has(url string) (bool, error) {
 
 // AddPage is a temporary function. Will be removed later.
 func (u *UrlIndex) AddPage(p *Page) {
-	m := make(map[string]interface{})
-	m[p.url] = p.content
-	r, err := u.client.HMSet("pages", m).Result()
+	logger := log.WithField("module", "pages")
+	b, err := u.client.HSet(config.RedisPagesKey, p.Url, p.Content).Result()
 	if err != nil {
-		log.Printf("WARNING: AddPage failed - %s\n", err.Error())
+		logger.Errorf("AddPage failed - %s\n", err.Error())
+		return
+	}
+
+	if b {
+		logger.Infof("Page added: %s", p.Url)
 	} else {
-		log.Println(r)
+		logger.Warnf("Page already exists: %s", p.Url)
 	}
 }
