@@ -1,6 +1,11 @@
 package config
 
-var ()
+var (
+	MaxChannelLen    = 1024
+	RedisAddr        = "47.101.131.75:8083"
+	RedisPassword    = "dedicatus123"
+	RedisUrlIndexKey = "url_index"
+)
 
 var DefaultHeaders = map[string]string{
 	"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",

@@ -1,10 +1,15 @@
-package main
+package page
 
 import (
 	"log"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/iondex/go-crawl/config"
+)
+
+var (
+	maxChannelLen = config.MaxChannelLen
 )
 
 type PageParser struct {
@@ -13,10 +18,10 @@ type PageParser struct {
 	linkFilter func(link string) bool
 }
 
-func NewPageParser(bufferLen int) *PageParser {
+func NewPageParser() *PageParser {
 	r := &PageParser{
-		links: make(chan string, bufferLen),
-		input: make(chan string, bufferLen),
+		links: make(chan string, maxChannelLen),
+		input: make(chan string, maxChannelLen),
 		linkFilter: func(url string) bool {
 			return strings.HasPrefix(url, "http")
 		},
@@ -25,8 +30,8 @@ func NewPageParser(bufferLen int) *PageParser {
 	return r
 }
 
-// FlowIn starts a goroutine to read from chan in.
-func (p *PageParser) FlowIn(in chan string) {
+// In starts a goroutine to read from chan in.
+func (p *PageParser) In(in chan string) {
 	go func() {
 		for b := range in {
 			p.input <- b
@@ -34,10 +39,24 @@ func (p *PageParser) FlowIn(in chan string) {
 	}()
 }
 
+// Out starts a goroutine to output all parsed links.
+func (p *PageParser) Out() chan string {
+	o := make(chan string, maxChannelLen)
+	go func() {
+		for l := range p.links {
+			o <- l
+		}
+	}()
+	return o
+}
+
 func (p *PageParser) extractLinks(doc *goquery.Document) {
 	sel := doc.Find("a")
-	sel.Each(func(i int, sel *goquery.Selection) {
-
+	sel.Each(func(i int, s *goquery.Selection) {
+		v, e := s.Attr("href")
+		if e && p.linkFilter(v) {
+			p.links <- v
+		}
 	})
 }
 
@@ -46,10 +65,11 @@ func (p *PageParser) parse(body string) error {
 	if err != nil {
 		return err
 	}
-	p.extractLinks(doc)
+	go p.extractLinks(doc)
 	return nil
 }
 
+// Start starts PageParser goroutine
 func (p *PageParser) Start() {
 	go func() {
 		for body := range p.input {
